@@ -20,5 +20,8 @@ rootProject.name = 'relay'
 // Plain Java, shared by the mod and the socket server. No Minecraft, no Fabric.
 include 'common'
 
+// The standalone socket server.
+include 'server'
+
 // The Fabric client mod.
 include 'client'

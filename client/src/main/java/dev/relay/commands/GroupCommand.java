@@ -1,8 +1,7 @@
 package dev.relay.commands;
 
-import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.tree.LiteralCommandNode;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import dev.relay.ModInfo;
 import dev.relay.chat.ChatMessages;
 import dev.relay.common.GroupNames;
@@ -11,31 +10,29 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 
 /**
- * The {@code /group} command. Client-side only: it never reaches the Minecraft server you are
- * playing on.
+ * The {@code group} half of {@code /relay}: {@code /relay group}, {@code ... info},
+ * {@code ... create <name>}.
+ *
+ * <p>Deliberately not registered as a bare {@code /group}. These are client commands, so a bare
+ * {@code /group} would swallow the {@code /group} belonging to whatever multiplayer server the
+ * player is on, and faction servers tend to have one.
  *
  * <p>There is no socket connection yet, so every subcommand reports the honest failure state.
  */
 public final class GroupCommand {
-	/** @return the registered node, so {@code /relay group} can point at the same tree. */
-	public static LiteralCommandNode<FabricClientCommandSource> register(
-			CommandDispatcher<FabricClientCommandSource> dispatcher) {
-		LiteralCommandNode<FabricClientCommandSource> node = dispatcher.register(
-				ClientCommandManager.literal("group")
-						.executes(context -> showInfo(context.getSource()))
-						.then(ClientCommandManager.literal("info")
-								.executes(context -> showInfo(context.getSource())))
-						.then(ClientCommandManager.literal("create")
-								.then(ClientCommandManager.argument("name", StringArgumentType.word())
-										.executes(context -> create(
-												context.getSource(),
-												StringArgumentType.getString(context, "name"))))));
-
-		ModInfo.LOG.debug("Registered /group");
-		return node;
+	static LiteralArgumentBuilder<FabricClientCommandSource> node() {
+		return ClientCommandManager.literal("group")
+				.executes(context -> showInfo(context.getSource()))
+				.then(ClientCommandManager.literal("info")
+						.executes(context -> showInfo(context.getSource())))
+				.then(ClientCommandManager.literal("create")
+						.then(ClientCommandManager.argument("name", StringArgumentType.word())
+								.executes(context -> create(
+										context.getSource(),
+										StringArgumentType.getString(context, "name")))));
 	}
 
-	static int showInfo(FabricClientCommandSource source) {
+	private static int showInfo(FabricClientCommandSource source) {
 		source.sendFeedback(ChatMessages.error(
 				"Not connected to a " + ModInfo.NAME + " server, so there is no group to show."));
 		return 1;

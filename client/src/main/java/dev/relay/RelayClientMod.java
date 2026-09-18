@@ -1,6 +1,5 @@
 package dev.relay;
 
-import dev.relay.commands.GroupCommand;
 import dev.relay.commands.RelayCommand;
 import dev.relay.litematica.LitematicaIntegration;
 
@@ -17,9 +16,8 @@ public final class RelayClientMod implements ClientModInitializer {
 		ModInfo.LOG.info("Starting {} {}", ModInfo.NAME, ModInfo.version());
 		logLitematicaStatus();
 
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-			RelayCommand.register(dispatcher, GroupCommand.register(dispatcher));
-		});
+		ClientCommandRegistrationCallback.EVENT.register(
+				(dispatcher, registryAccess) -> RelayCommand.register(dispatcher));
 
 		ModInfo.LOG.info("{} ready", ModInfo.NAME);
 	}

@@ -2,6 +2,7 @@ package dev.relay.commands;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.brigadier.CommandDispatcher;
@@ -26,23 +27,23 @@ class CommandTreeTest {
 	@BeforeEach
 	void registerCommands() {
 		dispatcher = new CommandDispatcher<>();
-		RelayCommand.register(dispatcher, GroupCommand.register(dispatcher));
+		RelayCommand.register(dispatcher);
 	}
 
 	@Test
-	void registersBothRootCommands() {
-		assertNotNull(dispatcher.getRoot().getChild("group"));
+	void registersOneRootCommand() {
 		assertNotNull(dispatcher.getRoot().getChild("relay"));
+	}
+
+	@Test
+	void doesNotShadowTheServersOwnGroupCommand() {
+		assertNull(dispatcher.getRoot().getChild("group"), "/group must stay with the multiplayer server");
 	}
 
 	@ParameterizedTest
 	@ValueSource(strings = {
-			"group",
-			"group info",
-			"group create Alpha",
 			"relay",
 			"relay status",
-			// /relay group redirects into the /group tree, which is easy to break by accident.
 			"relay group",
 			"relay group info",
 			"relay group create Alpha",
@@ -57,7 +58,7 @@ class CommandTreeTest {
 
 	@Test
 	void unknownSubcommandDoesNotParse() {
-		ParseResults<FabricClientCommandSource> parse = dispatcher.parse("group destroy Alpha", null);
+		ParseResults<FabricClientCommandSource> parse = dispatcher.parse("relay group destroy Alpha", null);
 
 		assertTrue(parse.getReader().canRead(), "unknown subcommand should leave input unconsumed");
 	}
