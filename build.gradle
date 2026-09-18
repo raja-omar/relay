@@ -1,0 +1,6 @@
+// Nothing is applied at the root: each module configures itself so there is no hidden
+// cross-module magic to untangle when something breaks.
+allprojects {
+	group = project.maven_group
+	version = project.mod_version
+}

@@ -1,0 +1,100 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+}
+
+// The `jar` task below reads :common's compiled output, which means :common has to be configured
+// before this file is evaluated.
+evaluationDependsOn(':common')
+
+base {
+	archivesName = project.mod_id
+}
+
+repositories {
+	// Litematica and MaLiLib are not published to a maven we can rely on for 1.21.11
+	// (masa's maven stops at 1.21.1), so they come from the Modrinth maven.
+	maven {
+		name = 'Modrinth'
+		url = 'https://api.modrinth.com/maven'
+		content {
+			includeGroup 'maven.modrinth'
+		}
+	}
+
+	// Only for conditional-mixin, see the dev-run dependency below.
+	maven {
+		name = 'Fallen\'s maven'
+		url = 'https://maven.fallenbreath.me/releases'
+		content {
+			includeGroup 'me.fallenbreath'
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings loom.officialMojangMappings()
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Litematica is the whole point of this mod, so it is on the compile classpath and in the
+	// dev client. It is never bundled -- players install it themselves.
+	modImplementation "maven.modrinth:litematica:${project.litematica_version}"
+	modImplementation "maven.modrinth:malilib:${project.malilib_version}"
+
+	// Litematica and MaLiLib carry conditional-mixin as a nested jar. A real install unpacks it,
+	// the dev run does not, and without it their mixin plugins fail on startup. Dev run only --
+	// this is never shipped or compiled against.
+	modRuntimeOnly "me.fallenbreath:conditional-mixin-fabric:${project.conditional_mixin_version}"
+
+	// Code shared with the socket server. Compiled into the mod jar by the `jar` task below.
+	implementation project(':common')
+
+	testImplementation platform("org.junit:junit-bom:${project.junit_version}")
+	testImplementation 'org.junit.jupiter:junit-jupiter'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	testLogging {
+		events 'passed', 'skipped', 'failed'
+	}
+}
+
+processResources {
+	// Keep fabric.mod.json in sync with gradle.properties instead of hand-editing versions.
+	def properties = [
+			mod_id            : project.mod_id,
+			mod_name          : project.mod_name,
+			version           : project.version,
+			minecraft_version : project.minecraft_version,
+			loader_version    : project.loader_version,
+			java_version      : project.java_version,
+			litematica_version: project.litematica_version,
+	]
+	inputs.properties properties
+
+	filesMatching('fabric.mod.json') {
+		expand properties
+	}
+}
+
+jar {
+	// The :common module is plain Java with no Minecraft references, so its classes can simply
+	// live inside the mod jar rather than being shipped as a separate library.
+	dependsOn ':common:classes'
+	from project(':common').sourceSets.main.output
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = project.java_version as int
+}
+
+java {
+	withSourcesJar()
+
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(project.java_version as int)
+	}
+}

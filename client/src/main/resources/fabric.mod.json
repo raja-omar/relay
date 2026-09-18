@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "${mod_id}",
+	"version": "${version}",
+	"name": "${mod_name}",
+	"description": "Share Litematica schematics with your group straight from Minecraft chat.",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.relay.RelayClientMod"
+		]
+	},
+	"depends": {
+		"minecraft": "~${minecraft_version}",
+		"fabricloader": ">=${loader_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*",
+		"litematica": ">=${litematica_version}"
+	}
+}

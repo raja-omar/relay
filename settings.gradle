@@ -1,0 +1,24 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+plugins {
+	// Lets Gradle download the exact JDK the toolchains ask for (Minecraft 1.21.11 needs Java 21),
+	// so a clean checkout builds without the developer installing a matching JDK by hand.
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'relay'
+
+// Plain Java, shared by the mod and the socket server. No Minecraft, no Fabric.
+include 'common'
+
+// The Fabric client mod.
+include 'client'

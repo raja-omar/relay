@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+
+# Fabric dev client working directory and Loom's own logs
+run/
+logs/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.eclipse/
+.settings/
+.classpath
+.project
+bin/
+
+# OS
+.DS_Store
