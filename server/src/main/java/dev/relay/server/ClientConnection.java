@@ -6,6 +6,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -42,8 +43,10 @@ public final class ClientConnection {
 	private final BlockingQueue<Message> outgoing = new ArrayBlockingQueue<>(SEND_QUEUE_CAPACITY);
 	private final AtomicBoolean closing = new AtomicBoolean();
 	private final String description;
+	private final java.net.InetAddress remoteAddress;
 
 	private volatile ClientSession session;
+	private volatile int maxFrameBytes = Protocol.MAX_PRE_AUTH_FRAME_BYTES;
 
 	ClientConnection(Socket socket) throws IOException {
 		this.socket = socket;
@@ -51,6 +54,12 @@ public final class ClientConnection {
 		this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 64 * 1024));
 		this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 64 * 1024));
 		this.description = String.valueOf(socket.getRemoteSocketAddress());
+		this.remoteAddress = socket.getInetAddress();
+		try {
+			this.socket.setSoTimeout(AbuseLimits.PRE_AUTH_TIMEOUT_MILLIS);
+		} catch (SocketException ignored) {
+			// The read loop will notice a dead socket the same way.
+		}
 	}
 
 	/** The authenticated player, or null while this connection is still anonymous. */
@@ -66,9 +75,23 @@ public final class ClientConnection {
 		return closing.get();
 	}
 
-	/** Blocks until a whole message has arrived. */
+	public java.net.InetAddress remoteAddress() {
+		return remoteAddress;
+	}
+
+	/** After AUTH, schematic-sized frames are allowed and idle reads no longer time out. */
+	void admit() {
+		maxFrameBytes = Protocol.MAX_FRAME_BYTES;
+
+		try {
+			socket.setSoTimeout(0);
+		} catch (SocketException ignored) {
+			// Already closing.
+		}
+	}
+
 	Message readMessage() throws IOException {
-		return Protocol.read(in);
+		return Protocol.read(in, maxFrameBytes);
 	}
 
 	/** Queues a message. Never blocks, and never throws: a failed send only ends this connection. */

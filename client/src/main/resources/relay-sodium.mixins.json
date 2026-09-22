@@ -1,0 +1,14 @@
+{
+	"required": false,
+	"minVersion": "0.8",
+	"package": "dev.relay.mixin.sodium",
+	"plugin": "dev.relay.mixin.RelayMixinPlugin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"SodiumDefaultFluidRendererMixin",
+		"SodiumFluidRendererImplMixin"
+	],
+	"injectors": {
+		"defaultRequire": 0
+	}
+}

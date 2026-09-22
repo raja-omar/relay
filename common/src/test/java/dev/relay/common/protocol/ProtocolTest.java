@@ -72,6 +72,15 @@ class ProtocolTest {
 	}
 
 	@Test
+	void rejectsAFrameLongerThanACallerSuppliedCap() {
+		byte[] header = lengthOnly(Protocol.MAX_PRE_AUTH_FRAME_BYTES + 1);
+		ProtocolException thrown = assertThrows(ProtocolException.class, () -> Protocol.read(
+				new DataInputStream(new ByteArrayInputStream(header)), Protocol.MAX_PRE_AUTH_FRAME_BYTES));
+
+		assertEquals(true, thrown.getMessage().contains("exceeds the limit"));
+	}
+
+	@Test
 	void rejectsAnEmptyOrNegativeFrame() {
 		assertThrows(ProtocolException.class, () -> readBack(lengthOnly(0)));
 		assertThrows(ProtocolException.class, () -> readBack(lengthOnly(-1)));
