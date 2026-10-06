@@ -17,6 +17,7 @@ public enum MessageType {
 	GROUP_INFO(7),
 	SCHEM_SHARE(8),
 	SCHEM_REQUEST(9),
+	BLOCK_PING(60),
 
 	// Server -> client.
 	AUTH_RESULT(20),
@@ -25,12 +26,14 @@ public enum MessageType {
 	SCHEM_SHARED(23),
 	SCHEM_TRANSFER(24),
 	ERROR(25),
+	NOTICE(26),
+	BLOCK_PINGED(61),
 
 	// Either direction.
 	PING(40),
 	PONG(41);
 
-	// 60+ is left free for things like LOCATION_SHARE.
+	// 62+ is left free.
 
 	private static final MessageType[] BY_ID = new MessageType[256];
 

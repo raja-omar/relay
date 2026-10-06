@@ -8,12 +8,15 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 
+import dev.relay.common.AccessTokens;
 import dev.relay.common.protocol.Message;
 import dev.relay.common.protocol.MessageType;
 import dev.relay.common.protocol.PacketReader;
 import dev.relay.common.protocol.PacketWriter;
 import dev.relay.common.protocol.Protocol;
 import dev.relay.common.protocol.ProtocolException;
+import dev.relay.common.protocol.SharePackets;
+import dev.relay.server.player.PlayerDirectory;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.Test;
  * machine.
  */
 class RelayServerTest {
+	private PlayerDirectory players;
 	private RelayServer server;
 
 	@AfterEach
@@ -34,18 +38,24 @@ class RelayServerTest {
 		}
 	}
 
-	private RelayServer start(String secret) throws IOException {
-		server = new RelayServer(new ServerConfig(0, secret));
+	private RelayServer start() throws IOException {
+		players = PlayerDirectory.inMemory();
+		server = new RelayServer(new ServerConfig(0), players);
 		server.start();
 		return server;
 	}
 
+	private String issue(String playerName) throws IOException {
+		return players.issue(playerName).token();
+	}
+
 	@Test
 	void signsInAClientThatAsksProperly() throws IOException {
-		start("");
+		start();
+		String token = issue("Alice");
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(UUID.randomUUID(), "Alice", "");
+		try (TestClient client = new TestClient(server)) {
+			client.sendAuth(token);
 
 			Message reply = client.receive();
 			PacketReader reader = reply.reader();
@@ -53,28 +63,34 @@ class RelayServerTest {
 			assertEquals(MessageType.AUTH_RESULT, reply.type());
 			assertTrue(reader.readBoolean());
 			assertEquals("Signed in as Alice", reader.readString());
+
+			// Signing in also volunteers the player's group state, which here is "none".
+			Message groupState = client.receive();
+			assertEquals(MessageType.GROUP_UPDATE, groupState.type());
+			assertFalse(groupState.reader().readBoolean());
+
 			awaitUntil(() -> server.sessions().size() == 1, "session to be registered");
 		}
 	}
 
 	@Test
-	void acceptsTheRightSecretAndRefusesTheWrongOne() throws IOException {
-		start("hunter2");
+	void acceptsAKnownIdAndRefusesAnUnknownOne() throws IOException {
+		start();
+		String token = issue("Alice");
 
-		try (TestClient good = new TestClient(server.port())) {
-			good.sendAuth(UUID.randomUUID(), "Alice", "hunter2");
-			assertTrue(accepted(good.receive()));
+		try (TestClient good = new TestClient(server)) {
+			signIn(good, token);
 		}
 
-		try (TestClient bad = new TestClient(server.port())) {
-			bad.sendAuth(UUID.randomUUID(), "Sneak", "hunter3");
+		try (TestClient bad = new TestClient(server)) {
+			bad.sendAuth(AccessTokens.issue());
 
 			Message reply = bad.receive();
 			PacketReader reader = reply.reader();
 
 			assertEquals(MessageType.AUTH_RESULT, reply.type());
 			assertFalse(reader.readBoolean());
-			assertEquals("Wrong server secret", reader.readString());
+			assertEquals("Unknown player id", reader.readString());
 			assertTrue(bad.awaitClose(), "server should hang up after refusing");
 			assertEquals(0, server.sessions().size());
 		}
@@ -82,10 +98,11 @@ class RelayServerTest {
 
 	@Test
 	void refusesAMismatchedProtocolVersion() throws IOException {
-		start("");
+		start();
+		String token = issue("Alice");
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(Protocol.VERSION + 1, UUID.randomUUID(), "Alice", "");
+		try (TestClient client = new TestClient(server)) {
+			client.sendAuth(Protocol.VERSION + 1, token);
 
 			assertFalse(accepted(client.receive()));
 			assertTrue(client.awaitClose());
@@ -93,22 +110,27 @@ class RelayServerTest {
 	}
 
 	@Test
-	void refusesAPlayerNameItWouldNotWantToPrint() throws IOException {
-		start("");
+	void refusesABlankId() throws IOException {
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(UUID.randomUUID(), "§cAdmin\nAlice", "");
+		try (TestClient client = new TestClient(server)) {
+			client.sendAuth("");
 
-			assertFalse(accepted(client.receive()));
+			Message reply = client.receive();
+			PacketReader reader = reply.reader();
+
+			assertEquals(MessageType.AUTH_RESULT, reply.type());
+			assertFalse(reader.readBoolean());
+			assertEquals("This server needs a player id. Use /relay login <id>.", reader.readString());
 			assertTrue(client.awaitClose());
 		}
 	}
 
 	@Test
 	void insistsOnAuthBeforeAnythingElse() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
+		try (TestClient client = new TestClient(server)) {
 			client.send(Message.of(MessageType.GROUP_INFO));
 
 			Message reply = client.receive();
@@ -121,15 +143,14 @@ class RelayServerTest {
 
 	@Test
 	void answersAPingWithAPong() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
+		try (TestClient client = new TestClient(server)) {
 			client.send(Message.of(MessageType.PING));
 
 			assertEquals(MessageType.PONG, client.receive().type());
 
-			client.sendAuth(UUID.randomUUID(), "Alice", "");
-			assertTrue(accepted(client.receive()));
+			signIn(client, issue("Alice"));
 
 			client.send(Message.of(MessageType.PING));
 			assertEquals(MessageType.PONG, client.receive().type());
@@ -137,19 +158,21 @@ class RelayServerTest {
 	}
 
 	@Test
-	void reportsMessagesItCannotHandleYetWithoutHangingUp() throws IOException {
-		start("");
+	void refusesAShareWhenThePlayerIsNotInAGroup() throws IOException {
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(UUID.randomUUID(), "Alice", "");
-			assertTrue(accepted(client.receive()));
+		try (TestClient client = new TestClient(server)) {
+			signIn(client, issue("Alice"));
 
-			client.send(new PacketWriter().writeString("Alpha").toMessage(MessageType.GROUP_CREATE));
+			client.send(SharePackets.share(
+					UUID.randomUUID(),
+					"Wall",
+					new byte[] { 0x1F, (byte) 0x8B, 0x08 }));
 
 			Message reply = client.receive();
 
 			assertEquals(MessageType.ERROR, reply.type());
-			assertTrue(reply.reader().readString().contains("GROUP_CREATE"));
+			assertTrue(reply.reader().readString().contains("not in a group"));
 
 			// Still usable afterwards.
 			client.send(Message.of(MessageType.PING));
@@ -159,9 +182,9 @@ class RelayServerTest {
 
 	@Test
 	void rejectsAnAuthMessageMissingItsFields() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
+		try (TestClient client = new TestClient(server)) {
 			client.send(new PacketWriter().writeInt(Protocol.VERSION).toMessage(MessageType.AUTH));
 
 			assertEquals(MessageType.ERROR, client.receive().type());
@@ -171,9 +194,9 @@ class RelayServerTest {
 
 	@Test
 	void survivesAFrameClaimingToBeEnormous() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
+		try (TestClient client = new TestClient(server)) {
 			client.sendRaw((byte) 0x7F, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF);
 
 			Message reply = client.receive();
@@ -184,17 +207,16 @@ class RelayServerTest {
 		}
 
 		// The server itself is unharmed and still takes connections.
-		try (TestClient after = new TestClient(server.port())) {
-			after.sendAuth(UUID.randomUUID(), "Alice", "");
-			assertTrue(accepted(after.receive()));
+		try (TestClient after = new TestClient(server)) {
+			signIn(after, issue("Alice"));
 		}
 	}
 
 	@Test
 	void survivesAnUnknownMessageType() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
+		try (TestClient client = new TestClient(server)) {
 			client.sendRaw((byte) 0, (byte) 0, (byte) 0, (byte) 1, (byte) 199);
 
 			assertEquals(MessageType.ERROR, client.receive().type());
@@ -204,16 +226,14 @@ class RelayServerTest {
 
 	@Test
 	void replacesAnOlderConnectionForTheSamePlayer() throws IOException {
-		start("");
-		UUID playerId = UUID.randomUUID();
+		start();
+		String token = issue("Alice");
 
-		try (TestClient first = new TestClient(server.port())) {
-			first.sendAuth(playerId, "Alice", "");
-			assertTrue(accepted(first.receive()));
+		try (TestClient first = new TestClient(server)) {
+			signIn(first, token);
 
-			try (TestClient second = new TestClient(server.port())) {
-				second.sendAuth(playerId, "Alice", "");
-				assertTrue(accepted(second.receive()));
+			try (TestClient second = new TestClient(server)) {
+				signIn(second, token);
 
 				Message kicked = first.receive();
 
@@ -230,12 +250,22 @@ class RelayServerTest {
 	}
 
 	@Test
-	void forgetsAPlayerWhoDisconnects() throws IOException {
-		start("");
+	void namesThePlayerFromTheIssuedIdNotTheClient() throws IOException {
+		start();
+		String token = issue("Alice");
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(UUID.randomUUID(), "Alice", "");
-			assertTrue(accepted(client.receive()));
+		try (TestClient client = new TestClient(server)) {
+			signIn(client, token);
+			assertEquals("Alice", server.sessions().all().iterator().next().playerName());
+		}
+	}
+
+	@Test
+	void forgetsAPlayerWhoDisconnects() throws IOException {
+		start();
+
+		try (TestClient client = new TestClient(server)) {
+			signIn(client, issue("Alice"));
 			awaitUntil(() -> server.sessions().size() == 1, "session to be registered");
 		}
 
@@ -245,11 +275,10 @@ class RelayServerTest {
 
 	@Test
 	void stopsCleanlyWithClientsStillConnected() throws IOException {
-		start("");
+		start();
 
-		try (TestClient client = new TestClient(server.port())) {
-			client.sendAuth(UUID.randomUUID(), "Alice", "");
-			assertTrue(accepted(client.receive()));
+		try (TestClient client = new TestClient(server)) {
+			signIn(client, issue("Alice"));
 
 			server.close();
 
@@ -260,6 +289,13 @@ class RelayServerTest {
 	private static boolean accepted(Message authResult) throws ProtocolException {
 		assertEquals(MessageType.AUTH_RESULT, authResult.type());
 		return authResult.reader().readBoolean();
+	}
+
+	/** Signs in and swallows the group state the server sends straight afterwards. */
+	private static void signIn(TestClient client, String token) throws IOException {
+		client.sendAuth(token);
+		assertTrue(accepted(client.receive()), "sign in should succeed");
+		assertEquals(MessageType.GROUP_UPDATE, client.receive().type());
 	}
 
 	private static void awaitUntil(BooleanSupplier condition, String what) {

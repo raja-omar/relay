@@ -1,0 +1,30 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.relay.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"BlockItemAccessor",
+		"BlockStatePredictionHandlerMixin",
+		"CameraMixin",
+		"ClientPacketListenerMixin",
+		"EasyPlaceUtilsMixin",
+		"FluidRenderingMixin",
+		"GuiAccessor",
+		"InventoryUtilsMixin",
+		"ItemBlockRenderTypesMixin",
+		"LavaFluidMixin",
+		"LavaFogEnvironmentMixin",
+		"LiquidBlockRendererMixin",
+		"ScreenEffectRendererMixin",
+		"WaterFogEnvironmentMixin",
+		"WaterFluidMixin",
+		"MinecraftMixin",
+		"MultiPlayerGameModeMixin",
+		"WidgetSchematicPlacementMixin",
+		"WorldUtilsMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

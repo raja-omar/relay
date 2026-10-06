@@ -7,8 +7,7 @@ import dev.relay.common.protocol.Message;
 /**
  * A player who has authenticated, and the connection they are on.
  *
- * <p>The identity is whatever the client claimed at login. That is the trust model: this is a
- * schematic drop box for a group that already trusts each other, not an account system.
+ * <p>The identity is the player the issued id belongs to. The client does not get to pick a name.
  */
 public final class ClientSession {
 	private final UUID playerId;

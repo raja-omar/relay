@@ -1,0 +1,15 @@
+{
+	"key.relay.open": "Open Relay",
+	"key.relay.cantmiss": "Toggle Cant Miss",
+	"key.relay.easyplace": "Toggle Easy Place",
+	"key.relay.shop": "Toggle Auto Purchase",
+	"key.relay.prepurchase": "Toggle Pre-purchase",
+	"key.relay.refill": "Toggle Auto Refill",
+	"key.relay.fastplace": "Toggle Fast Place",
+	"key.relay.patchcrumbs": "Toggle Patchcrumbs",
+	"key.relay.callout": "Callout Shot",
+	"key.relay.lava": "Cycle Lava",
+	"key.relay.ping": "Ping Block",
+	"key.relay.autpot": "Autpot",
+	"key.category.relay.main": "Relay"
+}

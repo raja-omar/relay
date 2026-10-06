@@ -29,6 +29,36 @@ repositories {
 			includeGroup 'me.fallenbreath'
 		}
 	}
+
+	maven {
+		name = 'Wisp Forest'
+		url = 'https://maven.wispforest.io/releases/'
+		content {
+			includeGroupByRegex 'io\\.wispforest(\\..*)?'
+		}
+	}
+
+	// owo 0.13.0 needs kdl4j from JitPack.
+	maven {
+		name = 'JitPack'
+		url = 'https://jitpack.io'
+		content {
+			includeGroup 'com.github.kdl-org'
+		}
+	}
+}
+
+loom {
+	runs {
+		// A second dev client, so group invitations can be tested between two real players without
+		// two Minecraft installs. Its own run directory keeps the two from fighting over saves.
+		clientTwo {
+			client()
+			configName = 'Minecraft Client Two'
+			runDir = 'run2'
+			programArgs '--username', 'Beta'
+		}
+	}
 }
 
 dependencies {
@@ -37,15 +67,45 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// Litematica is the whole point of this mod, so it is on the compile classpath and in the
-	// dev client. It is never bundled -- players install it themselves.
+	// Litematica and MaLiLib ship inside the Relay jar (Loom nested jars), so players only add
+	// Relay and Fabric API. Do not also drop standalone Litematica/MaLiLib into mods -- Fabric
+	// will refuse the duplicate.
 	modImplementation "maven.modrinth:litematica:${project.litematica_version}"
 	modImplementation "maven.modrinth:malilib:${project.malilib_version}"
+	include "maven.modrinth:litematica:${project.litematica_version}"
+	include "maven.modrinth:malilib:${project.malilib_version}"
 
-	// Litematica and MaLiLib carry conditional-mixin as a nested jar. A real install unpacks it,
-	// the dev run does not, and without it their mixin plugins fail on startup. Dev run only --
-	// this is never shipped or compiled against.
+	// Litematica and MaLiLib need this mixin plugin. A nested Litematica jar will not unpack
+	// *its* own nested jars, so we include the plugin ourselves.
 	modRuntimeOnly "me.fallenbreath:conditional-mixin-fabric:${project.conditional_mixin_version}"
+	include "me.fallenbreath:conditional-mixin-fabric:${project.conditional_mixin_version}"
+
+	// Lunar Adventure: chat, action bar, and overlay copy. The Fabric platform is a nested mod;
+	// MiniMessage and the API jars have to be nested too or they stay outside the player jar.
+	modImplementation "net.kyori:adventure-platform-fabric:${project.adventure_platform_version}"
+	include "net.kyori:adventure-platform-fabric:${project.adventure_platform_version}"
+	include "net.kyori:adventure-platform-mod-shared-fabric-repack:${project.adventure_platform_version}"
+	include "net.kyori:adventure-platform-api:${project.adventure_platform_api_version}"
+	include "net.kyori:adventure-api:${project.adventure_version}"
+	include "net.kyori:adventure-key:${project.adventure_version}"
+	include "net.kyori:adventure-text-minimessage:${project.adventure_version}"
+	include "net.kyori:adventure-text-serializer-gson:${project.adventure_version}"
+	include "net.kyori:adventure-text-serializer-json:${project.adventure_version}"
+	include "net.kyori:adventure-text-serializer-plain:${project.adventure_version}"
+	include "net.kyori:examination-api:${project.adventure_examination_version}"
+	include "net.kyori:examination-string:${project.adventure_examination_version}"
+	include "net.kyori:option:${project.adventure_option_version}"
+
+	// owo-ui is the overlay. Nested so players do not also install owo-lib. owo-lib's own nested
+	// jars (endec, jankson, kdl4j) have to be included here too, or they stay trapped inside owo.
+	modImplementation "io.wispforest:owo-lib:${project.owo_version}"
+	include "io.wispforest:owo-lib:${project.owo_version}"
+	include "io.wispforest:endec:${project.endec_version}"
+	include "io.wispforest.endec:netty:${project.endec_netty_version}"
+	include "io.wispforest.endec:gson:${project.endec_gson_version}"
+	include "io.wispforest.endec:jankson:${project.endec_jankson_version}"
+	include "blue.endless:jankson:${project.jankson_version}"
+	include "com.github.kdl-org:kdl4j:${project.kdl4j_version}"
 
 	// Code shared with the socket server. Compiled into the mod jar by the `jar` task below.
 	implementation project(':common')
@@ -53,6 +113,10 @@ dependencies {
 	testImplementation platform("org.junit:junit-bom:${project.junit_version}")
 	testImplementation 'org.junit.jupiter:junit-jupiter'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// Tests only: the mod's socket code is worth exercising against the real server rather than a
+	// stand-in, since the two ends of the protocol failing together would look like success.
+	testImplementation project(':server')
 }
 
 tasks.named('test') {
@@ -67,6 +131,9 @@ processResources {
 	def properties = [
 			mod_id            : project.mod_id,
 			mod_name          : project.mod_name,
+			mod_description   : project.mod_description,
+			mod_author        : project.mod_author,
+			mod_license       : project.mod_license,
 			version           : project.version,
 			minecraft_version : project.minecraft_version,
 			loader_version    : project.loader_version,
@@ -92,8 +159,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-	withSourcesJar()
-
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(project.java_version as int)
 	}

@@ -36,6 +36,31 @@ class PacketCodecTest {
 	}
 
 	@Test
+	void sharePacketsCarryIdNameAndBytes() throws ProtocolException {
+		UUID id = UUID.randomUUID();
+		byte[] data = { 0x1F, (byte) 0x8B, 0x08 };
+
+		Message share = SharePackets.share(id, "Wall", data);
+		PacketReader shareReader = share.reader();
+
+		assertEquals(MessageType.SCHEM_SHARE, share.type());
+		assertEquals(id, shareReader.readUuid());
+		assertEquals("Wall", shareReader.readString());
+		assertArrayEquals(data, shareReader.readBytes(16));
+		assertTrue(shareReader.atEnd());
+
+		Message shared = SharePackets.shared(id, "Alice", "Wall", data);
+		PacketReader sharedReader = shared.reader();
+
+		assertEquals(MessageType.SCHEM_SHARED, shared.type());
+		assertEquals(id, sharedReader.readUuid());
+		assertEquals("Alice", sharedReader.readString());
+		assertEquals("Wall", sharedReader.readString());
+		assertArrayEquals(data, sharedReader.readBytes(16));
+		assertTrue(sharedReader.atEnd());
+	}
+
+	@Test
 	void roundTripsAwkwardStrings() throws ProtocolException {
 		Message message = new PacketWriter()
 				.writeString("")

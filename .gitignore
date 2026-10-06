@@ -2,8 +2,9 @@
 .gradle/
 build/
 
-# Fabric dev client working directory and Loom's own logs
+# Fabric dev client working directories and Loom's own logs
 run/
+run2/
 logs/
 
 # IDEs
@@ -20,3 +21,12 @@ bin/
 
 # OS
 .DS_Store
+
+# Packaged install folders and the address baked into the client jar
+dist/
+client/src/main/resources/relay-defaults.properties
+
+# Issued player ids for a locally run schematic server
+relay-players
+relay-players.tmp
+relay-tls.p12

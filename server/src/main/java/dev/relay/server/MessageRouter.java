@@ -1,32 +1,43 @@
 package dev.relay.server;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.Optional;
 import java.util.UUID;
 
-import dev.relay.common.PlayerNames;
 import dev.relay.common.protocol.Message;
 import dev.relay.common.protocol.MessageType;
 import dev.relay.common.protocol.PacketReader;
 import dev.relay.common.protocol.PacketWriter;
 import dev.relay.common.protocol.Protocol;
 import dev.relay.common.protocol.ProtocolException;
+import dev.relay.server.group.GroupHandler;
+import dev.relay.server.ping.PingHandler;
+import dev.relay.server.player.PlayerDirectory;
+import dev.relay.server.share.ShareHandler;
 
 /**
- * Decides what a message means. This is where group handling and schematic transfers will be added;
- * for now it covers logging in and the keepalive.
+ * Decides what a message means. Groups and in-memory schematic shares are handled here;
+ * anything else is refused with an explanation.
  *
  * <p>Nothing here trusts what it is given. A malformed message raises {@link ProtocolException},
- * which the caller turns into an error reply and a disconnect.
+ * which the caller turns into an error reply and a disconnect. Identity comes from the issued
+ * player id, never from a name the client claimed.
  */
 public final class MessageRouter {
-	private final ServerConfig config;
+	private final PlayerDirectory players;
 	private final SessionRegistry sessions;
+	private final GroupHandler groups;
+	private final ShareHandler shares;
+	private final PingHandler pings;
+	private final AbuseLimits abuse;
 
-	public MessageRouter(ServerConfig config, SessionRegistry sessions) {
-		this.config = config;
+	public MessageRouter(PlayerDirectory players, SessionRegistry sessions, GroupHandler groups, ShareHandler shares,
+			PingHandler pings, AbuseLimits abuse) {
+		this.players = players;
 		this.sessions = sessions;
+		this.groups = groups;
+		this.shares = shares;
+		this.pings = pings;
+		this.abuse = abuse;
 	}
 
 	public void handle(ClientConnection connection, Message message) throws ProtocolException {
@@ -47,17 +58,23 @@ public final class MessageRouter {
 
 		switch (message.type()) {
 			case AUTH -> connection.reject("Already signed in");
-			// Groups arrive in phase 3, schematics in phases 5 and 6.
+			case GROUP_CREATE, GROUP_INVITE, GROUP_ACCEPT, GROUP_DECLINE, GROUP_LEAVE, GROUP_INFO ->
+					groups.handle(connection.session(), message);
+			case SCHEM_SHARE -> shares.handle(connection.session(), message);
+			case BLOCK_PING -> pings.handle(connection.session(), message);
 			default -> connection.sendError("The server does not handle " + message.type() + " yet");
 		}
+	}
+
+	/** Called when a connection goes away, so the player's group sees them drop offline. */
+	public void onDisconnected(ClientSession session) {
+		groups.onSignedOut(session);
 	}
 
 	private void authenticate(ClientConnection connection, Message message) throws ProtocolException {
 		PacketReader reader = message.reader();
 		int version = reader.readInt();
-		UUID playerId = reader.readUuid();
-		String playerName = reader.readString();
-		String secret = reader.readString();
+		String token = reader.readString();
 
 		if (version != Protocol.VERSION) {
 			refuse(connection, "Client protocol " + version + " does not match server protocol "
@@ -65,18 +82,30 @@ public final class MessageRouter {
 			return;
 		}
 
-		if (!PlayerNames.isValid(playerName)) {
-			refuse(connection, "That player name is not usable");
+		if (token.isBlank()) {
+			abuse.authFailed(connection.remoteAddress());
+			refuse(connection, "This server needs a player id. Use /relay login <id>.");
 			return;
 		}
 
-		if (!secretMatches(secret)) {
-			refuse(connection, "Wrong server secret");
+		if (!abuse.allowAuthAttempt(connection.remoteAddress())) {
+			refuse(connection, "Too many failed sign-ins from this address. Wait a minute.");
 			return;
 		}
 
+		Optional<PlayerDirectory.Entry> player = players.authenticate(token);
+
+		if (player.isEmpty()) {
+			abuse.authFailed(connection.remoteAddress());
+			refuse(connection, "Unknown player id");
+			return;
+		}
+
+		UUID playerId = player.get().playerId();
+		String playerName = player.get().playerName();
 		ClientSession session = new ClientSession(playerId, playerName, connection);
 		connection.session(session);
+		connection.admit();
 
 		Optional<ClientSession> displaced = sessions.login(session);
 		displaced.ifPresent(previous -> {
@@ -89,6 +118,9 @@ public final class MessageRouter {
 				.writeBoolean(true)
 				.writeString("Signed in as " + playerName)
 				.toMessage(MessageType.AUTH_RESULT));
+
+		// They may already be in a group from an earlier connection, so send them its state.
+		groups.onSignedIn(session);
 	}
 
 	private void refuse(ClientConnection connection, String reason) {
@@ -98,16 +130,5 @@ public final class MessageRouter {
 				.writeString(reason)
 				.toMessage(MessageType.AUTH_RESULT));
 		connection.disconnect(reason);
-	}
-
-	private boolean secretMatches(String offered) {
-		if (!config.requiresSecret()) {
-			return true;
-		}
-
-		// Constant time, so a wrong secret does not leak how much of it was right.
-		return MessageDigest.isEqual(
-				offered.getBytes(StandardCharsets.UTF_8),
-				config.secret().getBytes(StandardCharsets.UTF_8));
 	}
 }

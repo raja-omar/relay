@@ -19,7 +19,7 @@ import java.io.IOException;
  */
 public final class Protocol {
 	/** Bumped whenever the meaning of a message changes. Mismatches are refused at login. */
-	public static final int VERSION = 1;
+	public static final int VERSION = 4;
 
 	/**
 	 * Hard ceiling for a single frame. This is a "something is wrong" guard, not the schematic
@@ -29,6 +29,9 @@ public final class Protocol {
 
 	/** Ceiling for one string field, generous for a filename and small for an attacker. */
 	public static final int MAX_STRING_BYTES = 32 * 1024;
+
+	/** Bytes a client may send in one frame before it has signed in. AUTH and PING fit easily. */
+	public static final int MAX_PRE_AUTH_FRAME_BYTES = 4 * 1024;
 
 	public static void write(DataOutputStream out, Message message) throws IOException {
 		byte[] payload = message.payload();
@@ -51,21 +54,27 @@ public final class Protocol {
 		out.flush();
 	}
 
+	public static Message read(DataInputStream in) throws IOException {
+		return read(in, MAX_FRAME_BYTES);
+	}
+
 	/**
 	 * Reads one whole frame, blocking until it has arrived.
 	 *
 	 * @throws java.io.EOFException when the other side closed cleanly between frames
 	 * @throws ProtocolException when the frame could not possibly be valid
 	 */
-	public static Message read(DataInputStream in) throws IOException {
+	public static Message read(DataInputStream in, int maxFrameBytes) throws IOException {
 		int length = in.readInt();
 
 		if (length < 1) {
 			throw new ProtocolException("Frame length " + length + " is not a frame");
 		}
 
-		if (length > MAX_FRAME_BYTES) {
-			throw new ProtocolException("Frame of " + length + " bytes exceeds the limit of " + MAX_FRAME_BYTES);
+		int limit = maxFrameBytes > 0 ? maxFrameBytes : MAX_FRAME_BYTES;
+
+		if (length > limit) {
+			throw new ProtocolException("Frame of " + length + " bytes exceeds the limit of " + limit);
 		}
 
 		MessageType type = MessageType.fromId(in.readUnsignedByte());

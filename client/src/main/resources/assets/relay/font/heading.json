@@ -1,0 +1,16 @@
+{
+	"providers": [
+		{
+			"type": "ttf",
+			"file": "relay:inter_medium.ttf",
+			"shift": [0, 0.6],
+			"size": 9.0,
+			"oversample": 14.0,
+			"skip": ""
+		},
+		{
+			"type": "reference",
+			"id": "minecraft:default"
+		}
+	]
+}

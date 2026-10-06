@@ -8,8 +8,8 @@ import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.util.UUID;
 
+import dev.relay.common.Tls;
 import dev.relay.common.protocol.Message;
 import dev.relay.common.protocol.MessageType;
 import dev.relay.common.protocol.PacketWriter;
@@ -26,8 +26,12 @@ final class TestClient implements AutoCloseable {
 	private final DataInputStream in;
 	private final DataOutputStream out;
 
-	TestClient(int port) throws IOException {
-		socket = new Socket("127.0.0.1", port);
+	TestClient(RelayServer server) throws IOException {
+		this(server.port(), server.tlsPin());
+	}
+
+	TestClient(int port, String tlsPin) throws IOException {
+		socket = Tls.pinning(tlsPin).connect("127.0.0.1", port, TIMEOUT_MILLIS);
 		socket.setSoTimeout(TIMEOUT_MILLIS);
 		in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
 		out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
@@ -37,16 +41,14 @@ final class TestClient implements AutoCloseable {
 		Protocol.write(out, message);
 	}
 
-	void sendAuth(UUID playerId, String playerName, String secret) throws IOException {
-		sendAuth(Protocol.VERSION, playerId, playerName, secret);
+	void sendAuth(String token) throws IOException {
+		sendAuth(Protocol.VERSION, token);
 	}
 
-	void sendAuth(int version, UUID playerId, String playerName, String secret) throws IOException {
+	void sendAuth(int version, String token) throws IOException {
 		send(new PacketWriter()
 				.writeInt(version)
-				.writeUuid(playerId)
-				.writeString(playerName)
-				.writeString(secret)
+				.writeString(token)
 				.toMessage(MessageType.AUTH));
 	}
 
